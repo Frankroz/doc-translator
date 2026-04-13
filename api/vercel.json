@@ -1,13 +1,15 @@
 {
-  "functions": {
-    "api/*.cs": {
-      "runtime": "vercel-dotnet@3.1.0"
+  "version": 2,
+  "builds": [
+    {
+      "src": "*.csproj",
+      "use": "@vercel/dotnet"
     }
-  },
+  ],
   "routes": [
     {
-      "src": "/quote/(.*)",
-      "dest": "/api/Index.cs"
+      "src": "/(.*)",
+      "dest": "/"
     }
   ]
 }
