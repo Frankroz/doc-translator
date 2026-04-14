@@ -13,17 +13,6 @@ var mongoClient = new MongoClient(Environment.GetEnvironmentVariable("MONGO_URI"
 var database = mongoClient.GetDatabase("Translator");
 var _quotesCollection = database.GetCollection<Quote>("quotes");
 
-// Endpoint: Get default
-app.MapGet("/", async () =>
-{
-    var quotes = await _quotesCollection.Find(q => q.Category == "loading").ToListAsync();
-    if (!quotes.Any()) return Results.Ok(new { text = "Traduciendo con amor..." });
-
-    var random = new Random();
-    var selected = quotes[random.Next(quotes.Count)];
-    return Results.Ok(new { text = selected.Text });
-});
-
 // Endpoint: Get Random Loading Quote
 app.MapGet("/quote/loading", async () =>
 {
