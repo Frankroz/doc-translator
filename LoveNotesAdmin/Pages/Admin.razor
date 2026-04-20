@@ -1,0 +1,220 @@
+@page "/admin"
+@using LoveNotesAdmin.Models
+@using LoveNotesAdmin.Services
+@using Microsoft.AspNetCore.Authorization
+@using System.Text
+@using Microsoft.JSInterop
+@attribute [Authorize]
+@inject QuoteService QuoteService
+@inject IJSRuntime JS
+
+<div class="container mt-4 pb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="gradiente-texto fw-bold">Gestión de Notas Románticas</h3>
+        <button @onclick="ExportToTxt" class="btn btn-outline-info rounded-pill">
+            <i class="bi bi-download me-2"></i>Exportar .txt
+        </button>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card p-4 glass-card h-100">
+                <h5 class="text-info mb-3"><i class="bi bi-plus-circle me-2"></i>Nueva Nota</h5>
+                <div class="mb-3">
+                    <label class="form-label small">Mensaje</label>
+                    <input @bind="newQuote.Text" class="form-control" placeholder="Escribe aquí..." />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Categoría</label>
+                    <select @bind="newQuote.Category" class="form-select">
+                        <option value="loading">Cargando</option>
+                        <option value="ending">Final</option>
+                    </select>
+                </div>
+                <button @onclick="AddQuote" class="btn btn-primary w-100">Guardar Nota</button>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card p-4 glass-card h-100">
+                <h5 class="text-purple mb-3" style="color: var(--accent-purple);">
+                    <i class="bi bi-layers-fill me-2"></i>Creación Masiva
+                </h5>
+                <p class="text-muted small">Pega varias líneas (una frase por línea). Se usarán con la categoría seleccionada abajo.</p>
+                <textarea @bind="bulkText" class="form-control mb-3" rows="3" placeholder="Frase 1&#10;Frase 2&#10;Frase 3..."></textarea>
+                <div class="d-flex gap-2">
+                    <select @bind="bulkCategory" class="form-select w-50">
+                        <option value="loading">Como "Cargando"</option>
+                        <option value="ending">Como "Final"</option>
+                    </select>
+                    <button @onclick="AddBulkQuotes" class="btn btn-primary w-50 shadow-pink">
+                        Importar Líneas
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-5">
+    <div class="table-responsive glass-card p-3">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr class="text-muted small">
+                    <th style="width: 15%">CATEGORÍA</th>
+                    <th style="width: 65%">MENSAJE</th>
+                    <th style="width: 20%" class="text-center">ACCIONES</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var quote in quotes)
+                {
+                    <tr>
+                        <td>
+                            @if (editingId == quote.Id)
+                            {
+                                <select @bind="quote.Category" class="form-select form-select-sm">
+                                    <option value="loading">Cargando</option>
+                                    <option value="ending">Final</option>
+                                </select>
+                            }
+                            else
+                            {
+                                <span class="badge @(quote.Category == "loading" ? "bg-info" : "bg-success") rounded-pill">
+                                    @quote.Category.ToUpper()
+                                </span>
+                            }
+                        </td>
+                        <td class="text-dark">
+                            @if (editingId == quote.Id)
+                            {
+                                <input @bind="quote.Text" class="form-control form-control-sm" />
+                            }
+                            else
+                            {
+                                @quote.Text
+                            }
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group border-0">
+                                @if (editingId == quote.Id)
+                                {
+                                    <button @onclick="() => SaveEdit(quote)" class="btn btn-sm btn-outline-success border-0 me-2" title="Guardar">
+                                        <i class="bi bi-check-lg">Confirm</i>
+                                    </button>
+                                    <button @onclick="CancelEdit" class="btn btn-sm btn-outline-secondary border-0" title="Cancelar">
+                                        <i class="bi bi-x-lg">Cancel</i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button @onclick="() => StartEdit(quote.Id!)" class="btn btn-sm btn-outline-info border-0 me-2" title="Editar">
+                                        <i class="bi bi-pencil-square">Edit</i>
+                                    </button>
+                                    <button @onclick="() => DeleteQuote(quote.Id!)" class="btn btn-sm btn-outline-danger border-0" title="Eliminar">
+                                        <i class="bi bi-trash3-fill">Delete</i>
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+</div>
+
+@code {
+    private List<Quote> quotes = new();
+    private Quote newQuote = new() { Category = "loading" };
+    
+    private string bulkText = "";
+    private string bulkCategory = "loading";
+
+    // Variables de control para edición
+    private string? editingId;
+
+    protected override async Task OnInitializedAsync() => await RefreshList();
+
+    private async Task RefreshList() 
+    {
+        editingId = null;
+        quotes = await QuoteService.GetAllAsync();
+    }
+
+    // --- Lógica de Edición ---
+
+    private void StartEdit(string id) => editingId = id;
+
+    private void CancelEdit() => editingId = null;
+
+    private async Task SaveEdit(Quote quote)
+    {
+        if (!string.IsNullOrWhiteSpace(quote.Text))
+        {
+            await QuoteService.UpdateAsync(quote.Id!, quote);
+            editingId = null;
+            await RefreshList();
+        }
+    }
+
+    // --- Lógica de Eliminación (Confirmación simple) ---
+
+    private async Task DeleteQuote(string id)
+    {
+        // Usamos una confirmación simple de JS para evitar borrados accidentales
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "¿Estás seguro de que deseas eliminar esta nota?");
+        if (confirmed)
+        {
+            await QuoteService.DeleteAsync(id);
+            await RefreshList();
+        }
+    }
+
+    private async Task AddQuote()
+    {
+        if (!string.IsNullOrWhiteSpace(newQuote.Text))
+        {
+            await QuoteService.CreateAsync(newQuote);
+            newQuote = new Quote { Category = "loading" };
+            await RefreshList();
+        }
+    }
+
+    private async Task AddBulkQuotes()
+    {
+        if (string.IsNullOrWhiteSpace(bulkText)) return;
+
+        var lines = bulkText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            await QuoteService.CreateAsync(new Quote 
+            { 
+                Text = line.Trim(), 
+                Category = bulkCategory 
+            });
+        }
+
+        bulkText = "";
+        await RefreshList();
+    }
+
+    private async Task ExportToTxt()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("--- EXPORTACIÓN DE NOTAS ROMÁNTICAS ---");
+        sb.AppendLine($"Fecha: {DateTime.Now:dd/MM/yyyy}");
+        sb.AppendLine();
+
+        foreach (var q in quotes)
+        {
+            sb.AppendLine($"[{q.Category.ToUpper()}] {q.Text}");
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"Quotes_Export_{DateTime.Now:yyyyMMdd}.txt";
+        
+        // Llamada a una pequeña función JS para descargar el archivo
+        await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(bytes));
+    }
+}

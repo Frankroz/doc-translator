@@ -1,0 +1,57 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<div class="page">
+    <header>
+        <nav class="navbar navbar-expand-sm navbar-dark border-bottom border-secondary mb-3 shadow-sm" 
+             style="background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 1000;">
+            <div class="container">
+                <a class="navbar-brand fw-bold gradiente-texto" href="/">
+                    <i class="bi bi-heart-fill me-2"></i>LoveNotesAdmin
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                    <ul class="navbar-nav flex-grow-1">
+                        <li class="nav-item">
+                            <a class="nav-link text-light-emphasis" href="/">Inicio</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light-emphasis" href="/admin">Panel Admin</a>
+                        </li>
+                    </ul>
+                    <div class="d-flex align-items-center">
+                        <AuthorizeView>
+                            <Authorized>
+                                <span class="text-info me-3 small">
+                                    <i class="bi bi-person-check"></i> @context.User.Identity?.Name
+                                </span>
+                                <a href="/api/auth/logout" class="btn btn-outline-danger btn-sm rounded-pill px-3">
+                                    Salir
+                                </a>
+                            </Authorized>
+                            <NotAuthorized>
+                                <a href="/login" class="btn btn-outline-info btn-sm rounded-pill px-3">
+                                    <i class="bi bi-person-circle me-1"></i> Admin Login
+                                </a>
+                            </NotAuthorized>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container mt-4">
+            @Body
+        </div>
+    </main>
+
+    <footer class="footer text-muted bg-dark-subtle mt-auto py-3 mt-5">
+        <div class="container text-center">
+            <span class="small">&copy; 2026 - <span class="gradiente-texto fw-semibold">LoveNotesAdmin</span></span>
+        </div>
+    </footer>
+</div>

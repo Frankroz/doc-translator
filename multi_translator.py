@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox
 import random
 import gc
 import subprocess
+import requests
 
 try:
     from win32com.client import Dispatch
@@ -23,70 +24,28 @@ except ImportError:
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-romantic_notes = [
-    "Traduciendo con amor...",
-    "Haciendo tu vida un poquito más fácil...",
-    "Casi listo, como nosotros...",
-    "Unos segundos más para el mejor traductor...",
-    "Preparando algo especial para ti...",
-    "Relájate, yo me encargo de los idiomas hoy",
-    "Un documento menos, un beso más",
-    "Viste lo rápido que lo hago? Solo para impresionarte...",
-    "Traducir es fácil, lo difícil es no distraerme pensando en ti",
-    "Si este progreso fuera una cita, ya estaríamos en el postre",
-    "Mírame procesar... Sé que te gusta",
-    "Ocupada? No importa, yo sigo aquí dándolo todo por ti",
-    "Traduciendo... Porque Google no te quiere como yo",
-    "Analizando archivos... Ojalá entenderte a ti fuera así de simple",
-    "Haciendo magia. No me preguntes cómo, solo disfrútalo",
-    "Error 404: Corazón no encontrado... No mentiras, aquí estoy",
-    "Me encanta cuando me dejas trabajar así de duro...",
-    "Si vieras cómo se calienta mi CPU cuando me usas...",
-    "Traduciendo... Quiero darte un archivo grande",
-    "Quieres ver mi código fuente o prefieres seguir esperando?",
-    "Tocando este documento... Y no es lo único que quiero tocar",
-    "Estoy guardando cada movimiento, aprender para la próxima vez que me uses 😉",
-]
-
-final_love_notes = [
-    # --- Románticos & Dulces ---
-    "✨ ¡Todo listo! ✨\n\nEspero que esto te ahorre\nmucho tiempo hoy.\n\nTe quiero muchoooo!.",
-    "Hecho con amor para la persona\nque traduce mi mundo.\n\n❤︎",
-    "Misión cumplida.\n\nAhora ve a descansar,\nte lo has ganado.",
-    "Cada palabra fue traducida\npensando en ti.\n\nDisfruta tu tiempo libre.",
-    "Traducción terminada.\n\nMi código solo tiene sentido\nsi es para ayudarte.",
-
-    # --- Juguetones & Coquetos ---
-    "¡Listo!\n\nMe debes un beso por cada\npágina traducida. Haz la cuenta.",
-    "Terminé mi trabajo...\n\nAhora qué vamos a hacer\ncon todo ese tiempo libre? 😉",
-    "Documentos listos.\n\nYa te dije que te ves\nincreíble hoy?",
-    "Traducción exitosa.\n\nSoy el mejor asistente que\npodrías tener, admítelo.",
-
-    # --- Sarcásticos & Divertidos ---
-    "Listo.\n\nSi hay algún error, fue culpa de Google.\nSi está perfecto, fue gracias a mi.",
-    "Ya terminé.\n\nPor favor, no me pidas que traduzca\ntus sentimientos, eso es mas dificil.",
-    "Archivo procesado.\n\nHe trabajado más que tú en la última hora,\npero no dire nada. 😉",
-
-    # --- Picantes / Atrevidos (Dirty-ish) ---
-    "Terminé de procesar!\n\nMe encanta cuando me usas\nhasta que termino todo",
-    "Traducción completada.\n\nAhora que cerraste el archivo...\nPor qué no descansamos juntos? 🔥",
-    "Todo listo.\n\nSi crees que soy rápido trabajando,\nespera a que apagues la computadora.",
-    "Hecho.\n\nMe dejaste el CPU a 90 grados...\nVas a hacer algo para enfriarme?",
-    "Quiero darte\ntareas tan largas y pesadas... 😈"
-]
-
 class DocTranslatorPro(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         self.title("With Love ❤︎ - Doc Translator")
 
+        self.after(0, lambda: self.state('zoomed'))
+
         self.geometry("1000x820")
+        self.URL="https://lovenotesgroup-cjfwccfqdkggh7g4.canadacentral-01.azurewebsites.net"
+
+        self.languages = {
+            "Español": "es",
+            "Inglés": "en",
+            "Chino (Simplificado)": "zh-CN",
+            "Auto-detectar": "auto"
+        }
         
         self.is_cancelled = False
-        self.translator = GoogleTranslator(source='auto', target='es')
         self.files_path_set = set()
         self.files_to_process = []
+        self.translation_cache = {}
         
         self.total_units = 0
         self.done_units = 0
@@ -95,28 +54,40 @@ class DocTranslatorPro(ctk.CTk):
         self._build_ui()
         self._animate_heart()
 
-    def _animate_heart(self):
-        hearts = ["❤︎", "♥", "♡"]
-        idx = 0
-        def run():
-            while True:
-                try:
-                    h = hearts[idx % len(hearts)]
-                    self.title(f"With Love {h} - Doc Translator")
-                    idx += 1
-                    time.sleep(0.8)
-                except: break
-        threading.Thread(target=run, daemon=True).start()
-
     def _build_ui(self):
+        # --- CONFIGURACIÓN DE ESCALADO GLOBAL ---
+        # Columna principal se expande
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        
+        # Filas: La fila 3 (el scrollable frame) es la que se lleva el espacio sobrante
+        self.grid_rowconfigure(0, weight=0) # Cabecera fija
+        self.grid_rowconfigure(1, weight=0) # Idiomas fijo
+        self.grid_rowconfigure(2, weight=0) # Botones arriba fijo
+        self.grid_rowconfigure(3, weight=1) # LISTA EXPANDIBLE
+        self.grid_rowconfigure(4, weight=0) # Panel inferior fijo
 
+        # 1. CABECERA
         self.head = ctk.CTkLabel(self, text="TRANSLATOR FOR THE BEST TRANSLATOR", font=ctk.CTkFont(size=32, weight="bold"))
-        self.head.grid(row=0, column=0, pady=(40, 20))
+        self.head.grid(row=0, column=0, pady=(40, 20), sticky="ew") # sticky="ew" para centrar texto en el ancho
 
+        # 2. SECCIÓN DE IDIOMAS
+        self.lang_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.lang_frame.grid(row=1, column=0, pady=10)
+        # No necesita sticky="nsew" para mantenerse agrupado al centro
+
+        ctk.CTkLabel(self.lang_frame, text="De:").grid(row=0, column=0, padx=5)
+        self.combo_from = ctk.CTkOptionMenu(self.lang_frame, values=list(self.languages.keys()))
+        self.combo_from.set("Auto-detectar")
+        self.combo_from.grid(row=0, column=1, padx=10)
+
+        ctk.CTkLabel(self.lang_frame, text="A:").grid(row=0, column=2, padx=5)
+        self.combo_to = ctk.CTkOptionMenu(self.lang_frame, values=["Español", "Inglés", "Chino (Simplificado)"])
+        self.combo_to.set("Español")
+        self.combo_to.grid(row=0, column=3, padx=10)    
+
+        # 3. BOTONES DE CARGA
         self.up_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.up_frame.grid(row=1, column=0, padx=20, pady=10)
+        self.up_frame.grid(row=2, column=0, padx=20, pady=10)
 
         self.btn_fold = ctk.CTkButton(self.up_frame, text="📂 Carpeta", command=self.add_folder, fg_color="#27ae60", width=150)
         self.btn_fold.grid(row=0, column=0, padx=10)
@@ -127,26 +98,30 @@ class DocTranslatorPro(ctk.CTk):
         self.btn_clr = ctk.CTkButton(self.up_frame, text="🗑️ Limpiar", command=self.clear, fg_color="#7f8c8d", width=150)
         self.btn_clr.grid(row=0, column=2, padx=10)
 
+        # 4. LISTA DE ARCHIVOS (ELEMENTO MÁS IMPORTANTE PARA RESPONSIVIDAD)
         self.list_frame = ctk.CTkScrollableFrame(self, label_text="Cola de Documentos (Word, Excel, PPT)", label_font=ctk.CTkFont(weight="bold"))
-        self.list_frame.grid(row=2, column=0, padx=50, pady=20, sticky="nsew")
+        self.list_frame.grid(row=3, column=0, padx=50, pady=20, sticky="nsew") # NSEW hace que crezca en todas direcciones
 
+        # 5. PANEL INFERIOR (CONTROLES Y PROGRESO)
         self.bot_panel = ctk.CTkFrame(self, corner_radius=20, fg_color="#1a1a1a")
-        self.bot_panel.grid(row=3, column=0, padx=40, pady=30, sticky="ew")
-        self.bot_panel.grid_columnconfigure(0, weight=1)
+        self.bot_panel.grid(row=4, column=0, padx=40, pady=30, sticky="ew") # Se expande a lo ancho
+        self.bot_panel.grid_columnconfigure(0, weight=1) # Centra contenido interno
 
-        self.lbl_status = ctk.CTkLabel(self.bot_panel, text="Listo para procesar", font=ctk.CTkFont(size=16))
-        self.lbl_status.grid(row=0, column=0, pady=(20, 5))
+        self.lbl_status = ctk.CTkLabel(self.bot_panel, text="Esperando archivos...", font=ctk.CTkFont(size=16))
+        self.lbl_status.grid(row=0, column=0, pady=(20, 5), sticky="ew")
 
         self.lbl_msg = ctk.CTkLabel(self.bot_panel, text="", font=ctk.CTkFont(size=16))
-        self.lbl_msg.grid(row=1, column=0, pady=(0, 5))
+        self.lbl_msg.grid(row=1, column=0, pady=(0, 5), sticky="ew")
 
         self.lbl_eta = ctk.CTkLabel(self.bot_panel, text="ETA: --:--", text_color="#95a5a6")
-        self.lbl_eta.grid(row=2, column=0, pady=(0, 10))
+        self.lbl_eta.grid(row=2, column=0, pady=(0, 10), sticky="ew")
 
-        self.bar = ctk.CTkProgressBar(self.bot_panel, width=800, height=12)
+        # Barra de progreso responsiva: eliminamos width fijo de 800 y usamos sticky
+        self.bar = ctk.CTkProgressBar(self.bot_panel, height=12) 
         self.bar.set(0)
-        self.bar.grid(row=3, column=0, pady=10, padx=30)
+        self.bar.grid(row=3, column=0, pady=10, padx=50, sticky="ew") # Se ajusta al ancho del panel
 
+        # BOTONES DE CONTROL FINALES
         self.ctrl_btns = ctk.CTkFrame(self.bot_panel, fg_color="transparent")
         self.ctrl_btns.grid(row=4, column=0, pady=(10, 25))
 
@@ -155,8 +130,22 @@ class DocTranslatorPro(ctk.CTk):
         self.btn_go.grid(row=0, column=0, padx=10)
 
         self.btn_stop = ctk.CTkButton(self.ctrl_btns, text="🛑 CANCELAR", command=self.stop, 
-                                      width=150, height=50, fg_color="#c0392b", state="disabled")
+                                    width=150, height=50, fg_color="#c0392b", state="disabled")
         self.btn_stop.grid(row=0, column=1, padx=10)
+    
+    def _animate_heart(self):
+        beats = ["❤️", "💓", "❤️", "💓"] 
+        delays = [0.2, 0.4, 0.2, 0.8]
+        def run():
+            idx = 0
+            while True:
+                try:
+                    h = beats[idx % len(beats)]
+                    self.title(f"Hecho con amor para ti {h} - Doc Translator")
+                    time.sleep(delays[idx % len(delays)])
+                    idx += 1
+                except: break
+        threading.Thread(target=run, daemon=True).start()
 
     def add_folder(self):
         f = filedialog.askopenfilename(
@@ -172,7 +161,7 @@ class DocTranslatorPro(ctk.CTk):
             files_found = False
             
             for file in os.listdir(folder_path):
-                if file.lower().endswith(exts) and not file.startswith(('~$', 'BILINGUAL_')):
+                if file.lower().endswith(exts) and "_BILINGUAL_" not in file.upper() and not file.startswith('~$'):
                     self.register_file(os.path.join(folder_path, file))
                     files_found = True
             
@@ -181,7 +170,7 @@ class DocTranslatorPro(ctk.CTk):
 
     def add_file(self):
         f = filedialog.askopenfilename(filetypes=[("Archivos Office", "*.docx *.doc *.xlsx *.xls *.pptx *.ppt")])
-        if f and not os.path.basename(f).startswith('BILINGUAL_'):
+        if f and "_BILINGUAL_" not in os.path.basename(f).upper():
             self.register_file(f)
 
     def register_file(self, path):
@@ -224,10 +213,31 @@ class DocTranslatorPro(ctk.CTk):
         sel = [item["path"] for item in self.files_to_process if item["var"].get()]
         if not sel: return
 
+        lang_src_name = self.combo_from.get()
+        lang_tgt_name = self.combo_to.get()
+        lang_src = self.languages[lang_src_name]
+        lang_tgt = self.languages[lang_tgt_name]
+
+        # Mensaje de advertencia de "Peligro"
+        msg = (f"⚠️ ATENCIÓN: Vas a traducir de {lang_src_name} a {lang_tgt_name}.\n\n"
+           f"Los archivos se guardarán como '{lang_tgt_name}_BILINGUAL_...'\n"
+           "¿Deseas comenzar?")
+    
+        if not messagebox.askyesno("Confirmar Idiomas", msg):
+            return
+
+        self.translator = GoogleTranslator(source=lang_src, target=lang_tgt)
         self.is_cancelled = False
         self.btn_go.configure(state="disabled")
         self.btn_stop.configure(state="normal")
-        self.lbl_msg.configure(text=random.choice(romantic_notes))
+        self.selected_text = ""
+        try:
+            response = requests.get(f"{self.URL}/quote/ending", timeout=2)
+            self.selected_text = response.json().get("text")
+        except:
+            self.selected_text = "✨ ¡Todo listo! ✨\n\nEspero que esto te ahorre\nmucho tiempo hoy.\n\nTe quiero muchoooo!."
+
+        self.lbl_msg.configure(text=self.get_note())
         threading.Thread(target=self.main_loop, args=(sel,), daemon=True).start()
 
     def move_file(self, path, direction):
@@ -348,7 +358,8 @@ class DocTranslatorPro(ctk.CTk):
         """Optimized PowerPoint Translation with Batching and Filtering."""
         try:
             prs = Presentation(temp)
-            out_name = f"BILINGUAL_{os.path.basename(orig)}"
+            target_lang_name = self.combo_to.get().upper()
+            out_name = f"{target_lang_name}_BILINGUAL_{os.path.basename(orig)}"
             if orig.lower().endswith('.ppt'): out_name += "x"
             output_path = os.path.join(os.path.dirname(orig), out_name)
             
@@ -370,7 +381,7 @@ class DocTranslatorPro(ctk.CTk):
                         clean_text = paragraph.text.strip()
                         if clean_text and len(clean_text) > 1:
                             try:
-                                res = self.translator.translate(clean_text)
+                                res = self.safe_translate(clean_text)
                                 run = paragraph.add_run()
                                 run.text = f"\n{res}"
                                 if paragraph.runs:
@@ -386,7 +397,7 @@ class DocTranslatorPro(ctk.CTk):
                             clean_cell = cell.text.strip()
                             if clean_cell:
                                 try:
-                                    res = self.translator.translate(clean_cell)
+                                    res = self.safe_translate(clean_cell)
                                     cell.text = f"{clean_cell}\n{res}"
                                 except: pass
                                 self.upd_prog()
@@ -395,7 +406,7 @@ class DocTranslatorPro(ctk.CTk):
                 notes = slide.notes_slide.notes_text_frame
                 if notes.text.strip():
                     try:
-                        res = self.translator.translate(notes.text)
+                        res = self.safe_translate(notes.text)
                         notes.text = f"{notes.text}\n---\n{res}"
                     except: pass
 
@@ -405,7 +416,8 @@ class DocTranslatorPro(ctk.CTk):
 
     def translate_word(self, orig, temp):
         doc = Document(temp)
-        out_name = f"BILINGUAL_{os.path.basename(orig)}"
+        target_lang_name = self.combo_to.get().upper()
+        out_name = f"{target_lang_name}_BILINGUAL_{os.path.basename(orig)}"
         if orig.lower().endswith('.doc'): out_name += "x"
         output_path = os.path.join(os.path.dirname(orig), out_name)
 
@@ -414,7 +426,7 @@ class DocTranslatorPro(ctk.CTk):
             if p.text.strip():
                 try:
                     original_style = p.runs[0].font if p.runs else None
-                    res = self.translator.translate(p.text)
+                    res = self.safe_translate(p.text)
                     
                     run = p.add_run(f"\n{res}")
                     run.italic = False
@@ -436,7 +448,7 @@ class DocTranslatorPro(ctk.CTk):
                             original_text = cell.text
                             first_para = cell.paragraphs[0]
                             
-                            res = self.translator.translate(original_text)
+                            res = self.safe_translate(original_text)
                             new_run = first_para.add_run(f"\n{res}")
                             new_run.italic = False
                             doc.save(output_path)
@@ -469,10 +481,13 @@ class DocTranslatorPro(ctk.CTk):
                     cell, ncell = ws.cell(row=r, column=c), nws.cell(row=r, column=c)
                     
                     if not isinstance(cell, MergedCell):
-                        if isinstance(cell.value, str) and cell.value.strip():
+                        if isinstance(cell.value, str) and cell.value.strip() and not cell.value.strip().replace('.', '', 1).isdigit():
                             try:
-                                res = self.translator.translate(cell.value)
-                                ncell.value = f"{cell.value}\n{res}"
+                                if any(c.isalpha() for c in cell.value):
+                                    res = self.safe_translate(cell.value)
+                                    ncell.value = f"{cell.value}\n{res}"
+                                else:
+                                    ncell.value = cell.value
                             except: ncell.value = cell.value
                             self.upd_prog()
                         else: ncell.value = cell.value
@@ -496,12 +511,20 @@ class DocTranslatorPro(ctk.CTk):
                     except Exception as e:
                         print(f"No se pudo copiar una imagen: {e}")
 
-        out_name = f"BILINGUAL_{os.path.basename(orig)}"
+        target_lang_name = self.combo_to.get().upper()
+        out_name = f"{target_lang_name}_BILINGUAL_{os.path.basename(orig)}"
         if orig.lower().endswith('.xls'): out_name += "x"
         new_wb.save(os.path.join(os.path.dirname(orig), out_name))
         if "_TEMP_" in temp and os.path.exists(temp):
             try: os.remove(temp)
             except: pass
+    
+    def get_note(self):
+        try:
+            response = requests.get(f"{self.URL}/quote/loading", timeout=2)
+            return response.json().get("text")
+        except:
+            return "Un documento menos, un beso más"
 
     def upd_prog(self):
         self.done_units += 1
@@ -509,8 +532,8 @@ class DocTranslatorPro(ctk.CTk):
         p = self.done_units / total
         self.bar.set(p)
 
-        if random.random() < 0.10: 
-            self.lbl_msg.configure(text=random.choice(romantic_notes))
+        if random.random() < 0.20: 
+            self.lbl_msg.configure(text=self.get_note())
 
         elapsed = time.time() - self.start_time
         if self.done_units > 0 and self.total_units > 0:
@@ -529,11 +552,10 @@ class DocTranslatorPro(ctk.CTk):
         note.geometry("350x250")
         note.attributes("-topmost", True)
         
-        selected_text = random.choice(final_love_notes)
-        
+                
         label = ctk.CTkLabel(
             note, 
-            text=selected_text, 
+            text=self.selected_text, 
             font=ctk.CTkFont(size=15, slant="italic"),
             justify="center"
         )
@@ -558,6 +580,21 @@ class DocTranslatorPro(ctk.CTk):
             except Exception:
                 pass
         gc.collect()
+
+    def safe_translate(self, text):
+        if not text or not text.strip():
+            return text
+        
+        clean_text = text.strip()
+        if clean_text in self.translation_cache:
+            return self.translation_cache[clean_text]
+        
+        try:
+            translated = self.translator.translate(clean_text)
+            self.translation_cache[clean_text] = translated
+            return translated
+        except:
+            return text
 
 if __name__ == "__main__":
     app = DocTranslatorPro()
